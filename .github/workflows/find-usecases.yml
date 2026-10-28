@@ -1,0 +1,77 @@
+name: Find Sentinel Use Cases
+
+on:
+  workflow_dispatch:
+    inputs:
+      types:
+        description: "Data types, space separated (e.g. Syslog  or  AZFWApplicationRule AZFWNetworkRule AZFWDnsQuery)"
+        required: true
+      log_source:
+        description: "Label for the Log Source line (e.g. Syslog via AMA)"
+        required: false
+        default: ""
+      exact:
+        description: "Data types must match exactly (no more, no less)"
+        type: boolean
+        default: false
+      connector:
+        description: "Optional connectorId the rule must list (e.g. CefAma, SyslogAma, Office365)"
+        required: false
+        default: ""
+      keyword:
+        description: "Optional keyword in rule name/description"
+        required: false
+        default: ""
+      hunting:
+        description: "Include hunting queries"
+        type: boolean
+        default: false
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo (contains the script)
+        uses: actions/checkout@v4
+
+      - name: Checkout Azure-Sentinel (latest)
+        uses: actions/checkout@v4
+        with:
+          repository: Azure/Azure-Sentinel
+          path: Azure-Sentinel
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Run finder
+        env:
+          TYPES: ${{ inputs.types }}
+          LOG_SOURCE: ${{ inputs.log_source }}
+          CONNECTOR: ${{ inputs.connector }}
+          KEYWORD: ${{ inputs.keyword }}
+          EXACT: ${{ inputs.exact }}
+          HUNTING: ${{ inputs.hunting }}
+        run: |
+          ARGS=(--repo Azure-Sentinel --no-update)
+          read -r -a T <<< "$TYPES"
+          ARGS+=(--types "${T[@]}")
+          [ -n "$LOG_SOURCE" ] && ARGS+=(--log-source "$LOG_SOURCE")
+          [ -n "$CONNECTOR" ]  && ARGS+=(--connector "$CONNECTOR")
+          [ -n "$KEYWORD" ]    && ARGS+=(--keyword "$KEYWORD")
+          [ "$EXACT" = "true" ]   && ARGS+=(--exact)
+          [ "$HUNTING" = "true" ] && ARGS+=(--hunting)
+          python sentinel_usecase_finder.py "${ARGS[@]}"
+          # Show the results on the run's Summary page
+          cat output/*.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results (MD + CSV)
+        uses: actions/upload-artifact@v4
+        with:
+          name: usecases
+          path: output/

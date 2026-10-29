@@ -4,16 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       types:
-        description: "Data types, space separated (e.g. Syslog  or  AZFWApplicationRule AZFWNetworkRule AZFWDnsQuery)"
-        required: true
-      log_source:
-        description: "Label for the Log Source line (e.g. Syslog via AMA)"
+        description: "Data types / log source tables, space separated (e.g. Syslog  or  SecurityEvent). Leave blank to search by technique only"
         required: false
         default: ""
+      technique:
+        description: "MITRE technique number(s), space separated (e.g. T1059  or  T1110 T1098). Leave blank to search by data types only"
+        required: false
+        default: ""
+      match_both:
+        description: "Match BOTH data types and technique (untick = match EITHER one)"
+        type: boolean
+        default: true
       exact:
         description: "Data types must match exactly (no more, no less)"
         type: boolean
         default: false
+      log_source:
+        description: "Optional label for the Log Source line (e.g. Syslog via AMA)"
+        required: false
+        default: ""
       connector:
         description: "Optional connectorId the rule must list (e.g. CefAma, SyslogAma, Office365)"
         required: false
@@ -52,15 +61,22 @@ jobs:
       - name: Run finder
         env:
           TYPES: ${{ inputs.types }}
+          TECHNIQUE: ${{ inputs.technique }}
+          MATCH_BOTH: ${{ inputs.match_both }}
           LOG_SOURCE: ${{ inputs.log_source }}
           CONNECTOR: ${{ inputs.connector }}
           KEYWORD: ${{ inputs.keyword }}
           EXACT: ${{ inputs.exact }}
           HUNTING: ${{ inputs.hunting }}
         run: |
+          if [ -z "${TYPES// }" ] && [ -z "${TECHNIQUE// }" ]; then
+            echo "::error::Enter data types and/or a MITRE technique number"
+            exit 1
+          fi
           ARGS=(--repo Azure-Sentinel --no-update)
-          read -r -a T <<< "$TYPES"
-          ARGS+=(--types "${T[@]}")
+          if [ -n "${TYPES// }" ]; then read -r -a T <<< "$TYPES"; ARGS+=(--types "${T[@]}"); fi
+          if [ -n "${TECHNIQUE// }" ]; then read -r -a M <<< "$TECHNIQUE"; ARGS+=(--technique "${M[@]}"); fi
+          if [ "$MATCH_BOTH" = "true" ]; then ARGS+=(--match both); else ARGS+=(--match either); fi
           [ -n "$LOG_SOURCE" ] && ARGS+=(--log-source "$LOG_SOURCE")
           [ -n "$CONNECTOR" ]  && ARGS+=(--connector "$CONNECTOR")
           [ -n "$KEYWORD" ]    && ARGS+=(--keyword "$KEYWORD")
